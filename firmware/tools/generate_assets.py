@@ -1,0 +1,77 @@
+"""Subset OFL Noto Sans SC and rasterize the existing association mark."""
+from pathlib import Path
+import re
+from PIL import Image, ImageFont, ImageDraw
+
+ROOT=Path(__file__).resolve().parent
+chars=set(chr(c) for c in range(32,127))
+for path in [ROOT/'ui/badge_ui.c', ROOT/'ui/wifi_panel.c', ROOT/'usb_screen/device/src/wifi_service.c', ROOT/'usb_screen/device/src/ble_service.c', ROOT/'usb_screen/device/src/wallpaper_service.c']:
+    chars.update(c for c in path.read_text(encoding='utf-8') if 127<ord(c)<65535)
+chars.update(c for c in (ROOT/'ui/apps.c').read_text(encoding='utf-8') if 127<ord(c)<65535)
+# Retain existing status/error glyphs used by runtime messages.
+chars.update('串估写占参合同处安导忙执果样核步求状结绘缓联致装调超采限验')
+# Newer apps: pull string literals only. Their Chinese UI text needs glyphs, but
+# whole-file scanning would also swallow comment prose and bloat the font.
+# Kept in a separate pool: f56's glyph bitmap already sits close to LVGL's 20-bit
+# offset limit (1048575), so only the sizes these apps actually use get them.
+app_chars=set()
+for path in [ROOT/'ui/pixel_farm.c', ROOT/'ui/pixel_farm.h', ROOT/'ui/analog_clock.c', ROOT/'ui/analog_clock.h',
+             ROOT/'ui/weather.c', ROOT/'ui/weather.h', ROOT/'ui/weather_config.h']:
+    for text in re.findall(r'"((?:[^"\\]|\\.)*)"', path.read_text(encoding='utf-8')):
+        app_chars.update(c for c in text if 127<ord(c)<65535)
+base_chars=set(chars)   # snapshot before app glyphs: f36/f56 keep the old set
+chars |= app_chars
+grok_chars=set()
+for path in [ROOT/'ui/grok.c', ROOT/'ui/grok_data.h']:
+    grok_chars.update(c for c in path.read_text(encoding='utf-8') if 127<ord(c)<65535)
+chars=sorted(chars,key=ord)
+out=['#include "badge_ui.h"\n']
+for size in [14,18,24,36]:
+    chars=sorted(base_chars | (grok_chars if size==18 else set())
+                 | (app_chars if size<=36 else set()),key=ord)
+    font=ImageFont.truetype(str(ROOT/'vendor/fonts/NotoSansSC.ttf'),size)
+    font.set_variation_by_axes([700 if size>=56 else 600 if size>=24 else 500])
+    bounds=[font.getbbox(ch,anchor='ls') for ch in chars]
+    ascent=max(-box[1] for box in bounds); descent=max(box[3] for box in bounds)
+    line_height=max(size+5,ascent+descent+2)
+    bitmap=[]; glyphs=['{0}']
+    for ch in chars:
+        x0,y0,x1,y1=font.getbbox(ch,anchor='ls'); w,h=x1-x0,y1-y0
+        im=Image.new('L',(max(1,w),max(1,h)))
+        ImageDraw.Draw(im).text((-x0,-y0),ch,font=font,fill=255,anchor='ls')
+        glyphs.append('{%d,%d,%d,%d,%d,%d}'%(len(bitmap),round(font.getlength(ch)*16),w,h,x0,-y1))
+        bitmap.extend(im.tobytes() if h and w else b'')
+    stem=f'f{size}'
+    out += [f'static const uint8_t {stem}_bitmap[]={{'+','.join(map(str,bitmap))+'};\n',
+            f'static const lv_font_fmt_txt_glyph_dsc_t {stem}_glyphs[]={{'+','.join(glyphs)+'};\n',
+            f'static const uint16_t {stem}_unicode[]={{'+','.join(str(ord(c)-32) for c in chars)+'};\n',
+            f'static const lv_font_fmt_txt_cmap_t {stem}_map[]={{ {{.range_start=32,.range_length={ord(chars[-1])-31},.glyph_id_start=1,.unicode_list={stem}_unicode,.list_length={len(chars)},.type=LV_FONT_FMT_TXT_CMAP_SPARSE_TINY}} }};\n',
+            f'static lv_font_fmt_txt_dsc_t {stem}_dsc={{.glyph_bitmap={stem}_bitmap,.glyph_dsc={stem}_glyphs,.cmaps={stem}_map,.cmap_num=1,.bpp=8}};\n',
+            f'const lv_font_t font{size}={{.get_glyph_dsc=lv_font_get_glyph_dsc_fmt_txt,.get_glyph_bitmap=lv_font_get_bitmap_fmt_txt,.line_height={line_height},.base_line={descent+1},.dsc=&{stem}_dsc}};\n']
+# 协会 logo 已不再使用（名片页已移除），跳过生成可省约 90 KiB flash。
+
+# Built-in color-ribbon wallpaper, rasterized from simple geometry at 4x for smooth edges.
+ribbons=Image.new('RGBA',(1440,1440),'#100513')
+draw=ImageDraw.Draw(ribbons)
+for x,y,size,width,color,start,end in [(-42,-48,412,44,'#FF385B',10,310),(-3,-9,334,40,'#FF8C32',25,330),(36,30,256,36,'#FDCE41',45,345),(74,68,180,32,'#B948F4',65,360)]:
+    draw.arc((x*4,y*4,(x+size)*4,(y+size)*4),start,end,fill=color,width=width*4)
+ribbons=ribbons.resize((360,360),Image.Resampling.LANCZOS)
+wallpaper_path=ROOT/'ui/wallpaper.png'
+wallpaper=Image.open(wallpaper_path).convert('RGBA').resize((360,360),Image.Resampling.LANCZOS)
+for name,asset in [('badge_ribbons',ribbons),('badge_wallpaper',wallpaper)]:
+    # Opaque display art: store exactly the LCD's native format, with no alpha conversion per frame.
+    assert asset.getchannel('A').getextrema()==(255,255)
+    raw=bytearray()
+    rgb=asset.convert('RGB').tobytes()
+    for r,g,b in zip(rgb[0::3],rgb[1::3],rgb[2::3]):
+        value=((r>>3)<<11)|((g>>2)<<5)|(b>>3)
+        raw.extend((value&255,value>>8))
+    resources=ROOT/'resources/wallpapers'
+    resources.mkdir(parents=True,exist_ok=True)
+    (resources/(name+'.rgb565')).write_bytes(raw)
+
+target=ROOT/'ui/assets.c'
+content=''.join(out)
+if not target.exists() or target.read_text(encoding='utf-8')!=content:
+    target.write_text(content,encoding='utf-8')
+print('Generated fonts:',len(chars),'glyphs per size')

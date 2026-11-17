@@ -1,0 +1,40 @@
+# ---- 密钥（绝不提交）----
+firmware/ui/weather_config.h
+
+# ---- 构建产物 ----
+outputs/
+build/
+.pio/
+*.bin
+*.elf
+*.map
+*.a
+*.o
+managed_components/
+
+# ---- 第三方大体积依赖 ----
+firmware/vendor/lvgl-9.4.0/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 日志与临时文件 ----
+*.log
+*.tmp
+temp/
+staging/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 构建备份 ----
+*.bak
+*_old/

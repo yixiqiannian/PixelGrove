@@ -1,0 +1,32 @@
+#ifndef BADGE_WEATHER_CONFIG_H
+#define BADGE_WEATHER_CONFIG_H
+
+/* ---------------------------------------------------------------------------
+ * 和风天气（QWeather）配置
+ *
+ * 本文件含 API 密钥，已加入 .gitignore —— 不要提交、不要贴进日志。
+ * 换城市只需改 WX_LOCATION_ID / WX_CITY_LABEL（LocationID 用
+ * https://<host>/geo/v2/city/lookup?location=<城市名> 查）。
+ * ------------------------------------------------------------------------- */
+
+#define WX_API_HOST        "your-host.qweatherapi.com"   /* 控制台 → 设置 → API Host */
+#define WX_API_KEY         "YOUR_API_KEY_HERE"           /* 控制台 → 设置 → API KEY */
+
+#define WX_LOCATION_ID     "101210101"   /* 杭州 */
+#define WX_CITY_LABEL      "杭州"
+
+/* 该地点的 UTC 偏移（秒）。与接口 updateTime 里的 +08:00 保持一致；
+ * 设备自身时区不可信，一律用这个值换算当地日期与时间。 */
+#define WX_TZ_OFFSET_SEC   (8 * 3600)
+
+#define WX_REFRESH_SEC     1200   /* 自动刷新间隔：20 分钟 */
+#define WX_MANUAL_MIN_SEC  60     /* 手动刷新节流：60 秒内只允许一次 */
+#define WX_RETRY_BASE_SEC  40     /* 失败退避起点，之后逐次翻倍 */
+#define WX_RETRY_MAX_SEC   1200   /* 退避上限 */
+#define WX_HTTP_TIMEOUT_MS 10000  /* 单次请求超时 */
+
+/* 季节背景：0=按当地月份自动（北半球 3-5 春 / 6-8 夏 / 9-11 秋 / 12-2 冬），
+ * 1..4 强制春/夏/秋/冬，便于实板测试四种白天场景。 */
+#define WX_SEASON_OVERRIDE 0
+
+#endif
